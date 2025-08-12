@@ -1,0 +1,427 @@
+# Cookiecutter Template: Databricks Asset Bundle + CI/CD
+
+Below is a complete cookiecutter template you can copy into a folder and run with `cookiecutter /path/to/template`.
+
+Each section is a file. Create them with the exact paths shown.
+
+---
+path: cookiecutter.json
+---
+{
+  "project_name": "My Databricks Bundle Project",
+  "project_slug": "my_databricks_bundle",
+  "description": "Databricks Asset Bundle with mocked data job and CI/CD",
+  "author_name": "Your Name",
+  "python_version": "3.10",
+  "databricks_workspace_url": "https://adb-0000000000000000.0.azuredatabricks.net",
+  "catalog": "main",
+  "schema": "default",
+  "dev_branch": "dev",
+  "prod_branch": "main",
+  "default_compute": ["serverless", "cluster"],
+  "dev_existing_cluster_id": "",
+  "prod_existing_cluster_id": "",
+  "use_github_actions": ["y", "n"],
+  "use_azure_pipelines": ["n", "y"]
+}
+
+---
+path: hooks/post_gen_project.py
+---
+#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+
+# Make initial git repo and helpful .env example
+Path(".venv").mkdir(exist_ok=True)
+
+readme = Path("README.md")
+if not readme.exists():
+    readme.write_text(f"# {{cookiecutter.project_name}}\n\n{{cookiecutter.description}}\n")
+
+# Create a minimal .env.example
+Path(".env.example").write_text("""
+# Required for CI/CD (set in GitHub/Azure secret store, not locally committed)
+DATABRICKS_HOST={{cookiecutter.databricks_workspace_url}}
+# Personal access token or OIDC-based envs
+DATABRICKS_TOKEN=
+# Optional Unity Catalog overrides per env via variables in databricks.yml
+""".strip()+"\n")
+
+print("Template generated. Next steps in README.md")
+
+---
+path: {{cookiecutter.project_slug}}/README.md
+---
+# {{ cookiecutter.project_name }}
+
+{{ cookiecutter.description }}
+
+## What you get
+- Databricks Asset Bundle (`databricks.yml`) with two targets: **dev** and **prod**
+- Example Python package with a *mocked-data* job that counts "stuck" locations
+- CI/CD (GitHub Actions or Azure Pipelines) that validates, deploys and runs the job on push
+
+## Quick start
+```bash
+# 1) Create a project from this template
+cookiecutter /path/to/this/template
+cd {{ cookiecutter.project_slug }}
+
+# 2) Create & activate venv (any tool works)
+python -m venv .venv && source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+python -m pip install --upgrade pip build databricks-sdk databricks-cli
+
+# 3) Build the wheel used by the bundle job
+python -m build
+
+# 4) Auth to Databricks (PAT env or OIDC)
+export DATABRICKS_HOST={{ cookiecutter.databricks_workspace_url }}
+export DATABRICKS_TOKEN=***
+
+# 5) Validate, deploy, and run to DEV
+databricks bundle validate
+databricks bundle deploy --target dev
+# Trigger the job once via bundle (or via UI)
+databricks bundle run compute-count-locations --target dev
+```
+
+## Branch-based targeting
+- Pushes to `{{ cookiecutter.dev_branch }}` → deploy to **dev**
+- Pushes to `{{ cookiecutter.prod_branch }}` → deploy to **prod**
+
+## Serverless vs. cluster
+- If `default_compute` = `serverless`, tasks run on serverless compute.
+- If `cluster`, set `dev_existing_cluster_id` and `prod_existing_cluster_id`.
+
+---
+path: {{cookiecutter.project_slug}}/pyproject.toml
+---
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "{{ cookiecutter.project_slug }}"
+version = "0.1.0"
+description = "{{ cookiecutter.description }}"
+readme = "README.md"
+authors = [{ name = "{{ cookiecutter.author_name }}" }]
+requires-python = ">={{ cookiecutter.python_version }}"
+dependencies = [
+  "pyspark>=3.5.0",
+  "pandas>=2.2.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["find:"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+---
+path: {{cookiecutter.project_slug}}/src/{{cookiecutter.project_slug}}/__init__.py
+---
+__all__ = ["count_stuck_locations", "mock_locations"]
+
+---
+path: {{cookiecutter.project_slug}}/src/{{cookiecutter.project_slug}}/mock.py
+---
+from typing import List, Tuple
+import random
+
+STATUSES = ["ok", "moving", "stuck"]
+
+
+def mock_locations(n: int = 100, stuck_ratio: float = 0.2) -> List[Tuple[int, str]]:
+    """Generate (location_id, status) tuples with a fraction marked as 'stuck'."""
+    k_stuck = int(n * stuck_ratio)
+    data = []
+    ids = list(range(1, n + 1))
+    random.shuffle(ids)
+    for i, loc_id in enumerate(ids):
+        if i < k_stuck:
+            status = "stuck"
+        else:
+            status = random.choice(["ok", "moving"])  # non-stuck
+        data.append((loc_id, status))
+    return data
+
+---
+path: {{cookiecutter.project_slug}}/src/{{cookiecutter.project_slug}}/main.py
+---
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from .mock import mock_locations
+
+
+def count_stuck_locations(spark: SparkSession, n: int = 1000, stuck_ratio: float = 0.15) -> int:
+    data = mock_locations(n=n, stuck_ratio=stuck_ratio)
+    df = spark.createDataFrame(data, ["location_id", "status"])  # type: ignore[arg-type]
+    return df.filter(F.col("status") == F.lit("stuck")).count()
+
+
+def main():
+    spark = (
+        SparkSession.builder.appName("Count Stuck Locations")
+        .getOrCreate()
+    )
+    total = count_stuck_locations(spark)
+    print(f"STUCK_LOCATIONS={total}")
+    spark.stop()
+
+if __name__ == "__main__":
+    main()
+
+---
+path: {{cookiecutter.project_slug}}/tests/test_mock.py
+---
+from {{cookiecutter.project_slug}}.mock import mock_locations
+
+
+def test_mock_shapes():
+    data = mock_locations(50, 0.3)
+    assert len(data) == 50
+    assert all(len(row) == 2 for row in data)
+
+---
+path: {{cookiecutter.project_slug}}/databricks.yml
+---
+bundle:
+  name: {{ cookiecutter.project_slug }}
+
+workspace:
+  host: {{ cookiecutter.databricks_workspace_url }}
+
+artifacts:
+  # Build locally: `python -m build` → dist/*.whl
+  - path: .
+    build: ["python", "-m", "build"]
+    files: ["dist/*.whl"]
+
+resources:
+  jobs:
+    compute-count-locations:
+      name: "{{ cookiecutter.project_slug }} - Count Stuck Locations"
+      tasks:
+        - task_key: count_locations
+          python_wheel_task:
+            package_name: "{{ cookiecutter.project_slug }}"
+            entry_point: "main"
+          libraries:
+            - whl: "dist/{{ cookiecutter.project_slug }}-*.whl"
+          # Compute overridden per-target below
+          compute: {}
+      tags:
+        owner: "{{ cookiecutter.author_name }}"
+        purpose: "mocked-count"
+
+# Default variables; can be overridden per-target
+variables:
+  catalog: {{ cookiecutter.catalog }}
+  schema: {{ cookiecutter.schema }}
+
+# Per-environment overrides
+targets:
+  dev:
+    default: true
+    variables:
+      catalog: {{ cookiecutter.catalog }}
+      schema: {{ cookiecutter.schema }}_dev
+    resources:
+      jobs:
+        compute-count-locations:
+          tasks:
+            - task_key: count_locations
+              compute:
+                {% if cookiecutter.default_compute == "serverless" %}
+                serverless: true
+                {% else %}
+                existing_cluster_id: {{ cookiecutter.dev_existing_cluster_id }}
+                {% endif %}
+
+  prod:
+    variables:
+      catalog: {{ cookiecutter.catalog }}
+      schema: {{ cookiecutter.schema }}
+    resources:
+      jobs:
+        compute-count-locations:
+          tasks:
+            - task_key: count_locations
+              compute:
+                {% if cookiecutter.default_compute == "serverless" %}
+                serverless: true
+                {% else %}
+                existing_cluster_id: {{ cookiecutter.prod_existing_cluster_id }}
+                {% endif %}
+
+---
+path: {{cookiecutter.project_slug}}/.gitignore
+---
+.venv/
+__pycache__/
+*.egg-info/
+dist/
+build/
+*.log
+.env
+
+---
+path: {{cookiecutter.project_slug}}/.env.example
+---
+DATABRICKS_HOST={{ cookiecutter.databricks_workspace_url }}
+DATABRICKS_TOKEN=
+
+---
+path: {{cookiecutter.project_slug}}/.github/workflows/databricks-ci.yml
+condition: {{ cookiecutter.use_github_actions == 'y' }}
+---
+name: databricks-bundle-ci
+
+on:
+  push:
+    branches:
+      - {{ cookiecutter.dev_branch }}
+      - {{ cookiecutter.prod_branch }}
+  workflow_dispatch: {}
+
+jobs:
+  build-deploy-run:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "{{ cookiecutter.python_version }}"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install build databricks-cli databricks-sdk
+
+      - name: Build wheel
+        run: python -m build
+
+      - name: Set target
+        id: tgt
+        run: |
+          if [[ "${{ '${{github.ref_name}}' }}" == "{{ cookiecutter.prod_branch }}" ]]; then echo "target=prod" >> $GITHUB_OUTPUT; else echo "target=dev" >> $GITHUB_OUTPUT; fi
+
+      - name: Auth (PAT or OIDC)
+        env:
+          DATABRICKS_HOST: ${{ '${{ secrets.DATABRICKS_HOST }}' }}
+          DATABRICKS_TOKEN: ${{ '${{ secrets.DATABRICKS_TOKEN }}' }}
+        run: |
+          test -n "$DATABRICKS_HOST" || (echo "Missing DATABRICKS_HOST" && exit 1)
+          if [ -z "$DATABRICKS_TOKEN" ]; then
+            echo "Using OIDC (if workspace supports it)"; fi
+
+      - name: Validate bundle
+        run: databricks bundle validate
+
+      - name: Deploy bundle
+        run: databricks bundle deploy --target ${{ '${{ steps.tgt.outputs.target }}' }}
+
+      - name: Run job once
+        run: databricks bundle run compute-count-locations --target ${{ '${{ steps.tgt.outputs.target }}' }}
+
+---
+path: {{cookiecutter.project_slug}}/azure-pipelines.yml
+condition: {{ cookiecutter.use_azure_pipelines == 'y' }}
+---
+trigger:
+  branches:
+    include:
+      - {{ cookiecutter.dev_branch }}
+      - {{ cookiecutter.prod_branch }}
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  pythonVersion: "{{ cookiecutter.python_version }}"
+
+steps:
+  - checkout: self
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '$(pythonVersion)'
+
+  - script: |
+      python -m pip install --upgrade pip
+      pip install build databricks-cli databricks-sdk
+    displayName: Install deps
+
+  - script: python -m build
+    displayName: Build wheel
+
+  - powershell: |
+      if ('$(Build.SourceBranchName)' -eq '{{ cookiecutter.prod_branch }}') { echo "##vso[task.setvariable variable=target]prod" } else { echo "##vso[task.setvariable variable=target]dev" }
+    displayName: Select target
+
+  - script: |
+      databricks bundle validate
+    env:
+      DATABRICKS_HOST: $(DATABRICKS_HOST)
+      DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+    displayName: Validate bundle
+
+  - script: |
+      databricks bundle deploy --target $(target)
+      databricks bundle run compute-count-locations --target $(target)
+    env:
+      DATABRICKS_HOST: $(DATABRICKS_HOST)
+      DATABRICKS_TOKEN: $(DATABRICKS_TOKEN)
+    displayName: Deploy & run
+
+---
+path: {{cookiecutter.project_slug}}/.devcontainer/devcontainer.json
+---
+{
+  "name": "{{ cookiecutter.project_slug }}",
+  "image": "mcr.microsoft.com/devcontainers/python:{{ cookiecutter.python_version }}",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {}
+  },
+  "postCreateCommand": "python -m pip install --upgrade pip && pip install build databricks-cli databricks-sdk",
+  "remoteEnv": {
+    "DATABRICKS_HOST": "${localEnv:DATABRICKS_HOST}",
+    "DATABRICKS_TOKEN": "${localEnv:DATABRICKS_TOKEN}"
+  }
+}
+
+---
+path: {{cookiecutter.project_slug}}/Makefile
+---
+.PHONY: venv build validate deploy run fmt test
+
+venv:
+	python -m venv .venv && . .venv/bin/activate && python -m pip install --upgrade pip build databricks-cli databricks-sdk && pip install -e .
+
+build:
+	python -m build
+
+validate:
+	databricks bundle validate
+
+deploy:
+	databricks bundle deploy --target dev
+
+run:
+	databricks bundle run compute-count-locations --target dev
+
+fmt:
+	python -m pip install black && black src tests
+
+test:
+	python -m pip install pytest && pytest -q

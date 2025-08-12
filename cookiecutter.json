@@ -1,0 +1,7 @@
+{
+  "project_name": "DBX Serverless Bundle",
+  "project_slug": "dbx_serverless_bundle",
+  "package_name": "dbx_serverless_pkg",
+  "workspace_host_dev": "https://<your-dev-workspace>",
+  "workspace_host_prod": "https://<your-prod-workspace>"
+}

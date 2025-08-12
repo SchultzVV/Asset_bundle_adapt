@@ -1,0 +1,3 @@
+{% if cookiecutter.azure_pipelines == "yes" %}
+# Azure Pipelines configuration
+{% endif %}

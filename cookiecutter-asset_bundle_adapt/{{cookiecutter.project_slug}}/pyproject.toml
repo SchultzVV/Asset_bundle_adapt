@@ -1,0 +1,4 @@
+[tool.poetry]
+name = "{{cookiecutter.project_slug}}"
+version = "0.1.0"
+description = "Databricks Asset Bundle"

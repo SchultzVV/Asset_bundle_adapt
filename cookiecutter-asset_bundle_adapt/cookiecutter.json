@@ -1,0 +1,8 @@
+{
+  "project_slug": "asset_bundle_adapt",
+  "default_compute": "serverless",
+  "dev_existing_cluster_id": "",
+  "github_actions": ["yes", "no"],
+  "azure_pipelines": ["yes", "no"]
+  "repo_url": "https://github.com/SchultzVV/your-repo.git"
+}

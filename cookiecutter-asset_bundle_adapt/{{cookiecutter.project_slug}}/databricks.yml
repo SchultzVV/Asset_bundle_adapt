@@ -1,0 +1,5 @@
+{% if cookiecutter.default_compute == "serverless" %}
+serverless: true
+{% else %}
+existing_cluster_id: {{ cookiecutter.dev_existing_cluster_id }}
+{% endif %}

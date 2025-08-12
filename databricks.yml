@@ -1,0 +1,47 @@
+# databricks.yml (bundle root)
+bundle:
+  name: {{ cookiecutter.project_slug }}
+
+artifacts:
+  wheel_pkg:
+    type: python_wheel
+    path: .
+    build: "python -m build"
+
+resources:
+  jobs:
+    compute-count-locations:
+      name: {{ cookiecutter.project_slug }} - count locations
+      tasks:
+        - task_key: run_count
+          python_wheel_task:
+            package_name: "{{ cookiecutter.package_name }}"
+            entry_point: "main"
+            parameters: ["--env", "${bundle.target}"]
+          # ✅ Default to serverless compute for Jobs
+          new_cluster:
+            serverless: true
+            spark_version: "14.3.x-scala2.12"
+            # (Optional) uncomment if your workspace requires it
+            # data_security_mode: SINGLE_USER
+            # runtime_engine: STANDARD
+
+targets:
+  dev:
+    workspace:
+      host: ${var.workspace_host_dev}
+    variables:
+      workspace_host_dev: "{{ cookiecutter.workspace_host_dev }}"
+  prod:
+    workspace:
+      host: ${var.workspace_host_prod}
+    variables:
+      workspace_host_prod: "{{ cookiecutter.workspace_host_prod }}"
+#'''
+# Notes
+    # For Spark tasks, setting new_cluster.serverless: true makes the job run on Databricks Serverless compute (where available).
+# 
+    # For SQL tasks, you’d use a serverless SQL warehouse instead (e.g., warehouse_id: ${var.sql_warehouse_id} pointing to a serverless warehouse).
+# 
+    # If your workspace enforces policies, add the required fields (e.g., data_security_mode, policy_id) under new_cluster.
+# '''

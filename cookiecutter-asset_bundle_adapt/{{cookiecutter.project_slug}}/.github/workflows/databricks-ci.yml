@@ -1,0 +1,3 @@
+{% if cookiecutter.github_actions == "yes" %}
+# GitHub Actions workflow for Databricks CI
+{% endif %}
