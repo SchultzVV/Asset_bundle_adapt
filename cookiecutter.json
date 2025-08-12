@@ -1,7 +1,8 @@
 {
-  "project_name": "DBX Serverless Bundle",
-  "project_slug": "dbx_serverless_bundle",
-  "package_name": "dbx_serverless_pkg",
-  "workspace_host_dev": "https://<your-dev-workspace>",
-  "workspace_host_prod": "https://<your-prod-workspace>"
+  "project_slug": "asset_bundle_adapt",
+  "default_compute": "serverless",
+  "dev_existing_cluster_id": "",
+  "github_actions": ["yes", "no"],
+  "azure_pipelines": ["yes", "no"]
+  "repo_url": "https://github.com/SchultzVV/your-repo.git"
 }
